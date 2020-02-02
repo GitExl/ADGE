@@ -1,0 +1,12 @@
+{
+	"name": "adge",
+	"authors": [
+		"Dennis \"Exl\" Meuwissen"
+	],
+	"dependencies": {
+		"derelict-sdl2": "~>2.1.4"
+	},
+	"description": "A D Gameboy Emulator",
+	"copyright": "Copyright © 2020, Dennis \"Exl\" Meuwissen",
+	"license": "New BSD"
+}

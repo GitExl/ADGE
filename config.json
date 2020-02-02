@@ -1,0 +1,35 @@
+{
+  "gameboy": {
+    "mode": "dmg",
+    "boot_rom": "dmg",
+    "fast_forward_frameskip": 6
+  },
+  "display": {
+    "palette": "pocket",
+    "border_horizontal": 3,
+    "border_vertical": 2,
+    "scale": 5,
+    "vsync": true,
+    "blur_frames": 2,
+    "filter": "nearest"
+  },
+  "sound": {
+    "sample_rate": 48000,
+    "volume": 1.0,
+    "highpass_filter": true,
+    "buffer_size": 512,
+    "output_filename": ""
+  },
+  "input": {
+    "button_a": "A",
+    "button_b": "S",
+    "button_start": "RETURN",
+    "button_select": "RSHIFT",
+    "button_up": "UP",
+    "button_down": "DOWN",
+    "button_left": "LEFT",
+    "button_right": "RIGHT",
+    "debug": "TAB",
+    "fast_forward": "GRAVE"
+  }
+}
