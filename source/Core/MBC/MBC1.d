@@ -7,26 +7,26 @@ import Core.MBC.IMBC;
 
 private enum SwitchMode : ubyte {
     ROM,
-	RAM,
+    RAM,
 }
 
 public final class MBC1 : IMBC {
-	private ubyte _romBank;
-	private SwitchMode _switchMode;
+    private ubyte _romBank;
+    private SwitchMode _switchMode;
 
     private ubyte _ramBank;
     private bool _ramWriteEnabled;
 
-	public void reset() {
-		_romBank = 1;
+    public void reset() {
+        _romBank = 1;
         _switchMode = SwitchMode.ROM;
 
         _ramBank = 0;
         _ramWriteEnabled = false;
-	}
+    }
 
-	public void write(immutable ushort address, immutable ubyte value) {
-		switch (address & 0xF000) {
+    public void write(immutable ushort address, immutable ubyte value) {
+        switch (address & 0xF000) {
 
             // RAM enable.
             case 0x0000:
@@ -34,13 +34,13 @@ public final class MBC1 : IMBC {
                 _ramWriteEnabled = (value == 0x0A);
                 break;
 
-			// ROM bank select lower bits.
+            // ROM bank select lower bits.
             case 0x2000:
             case 0x3000:
                 setROMBank((_romBank & 0x60) | (value & 0x1F));
                 break;
 
-			// ROM bank select upper bits\RAM bank select.
+            // ROM bank select upper bits\RAM bank select.
             case 0x4000:
             case 0x5000:
                 if (_switchMode == SwitchMode.RAM) {
@@ -50,7 +50,7 @@ public final class MBC1 : IMBC {
                 }
                 break;
 
-			// ROM\RAM bank switch.
+            // ROM\RAM bank switch.
             case 0x6000:
             case 0x7000:
                 if (value & 0x01) {
@@ -65,7 +65,7 @@ public final class MBC1 : IMBC {
             default:
                 throw new Exception("Unhandled MBC ROM write.");
         }
-	}
+    }
 
     private void setROMBank(immutable ubyte bank) {
         _romBank = bank;
@@ -74,23 +74,23 @@ public final class MBC1 : IMBC {
         }
     }
 
-	@property
-	public int romBank() {
-		return _romBank;
-	}
+    @property
+    public int romBank() {
+        return _romBank;
+    }
 
-	@property
-	public int ramBank() {
-		return _ramBank;
-	}
+    @property
+    public int ramBank() {
+        return _ramBank;
+    }
 
-	@property
-	public bool ramWriteEnabled() {
-		return _ramWriteEnabled;
-	}
+    @property
+    public bool ramWriteEnabled() {
+        return _ramWriteEnabled;
+    }
 
-	@property
-	public string name() {
-		return "MBC1";
-	}
+    @property
+    public string name() {
+        return "MBC1";
+    }
 }

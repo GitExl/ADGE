@@ -5,17 +5,17 @@
     "fast_forward_frameskip": 6
   },
   "display": {
-    "palette": "pocket",
+    "palette": "green",
     "border_horizontal": 3,
     "border_vertical": 2,
     "scale": 5,
     "vsync": true,
-    "blur_frames": 2,
+    "blur_frames": 3,
     "filter": "nearest"
   },
   "sound": {
     "sample_rate": 48000,
-    "volume": 1.0,
+    "volume": 0.15,
     "highpass_filter": true,
     "buffer_size": 512,
     "output_filename": ""

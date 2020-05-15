@@ -15,7 +15,7 @@ public final class Channel0 : ChannelBase {
     private ushort _frameTicks;
     private FrequencySweep _frequencySweep;
     private SquareWave _squareWave;
-	private VolumeEnvelope _volumeEnvelope;
+    private VolumeEnvelope _volumeEnvelope;
     private Duration _duration;
 
     public this() {
@@ -25,7 +25,7 @@ public final class Channel0 : ChannelBase {
         _duration = new Duration(this, 64);
     }
 
-	public void reset() {
+    public void reset() {
         _frameTicks = 0;
         _active = false;
         _volume = 1;
@@ -34,9 +34,9 @@ public final class Channel0 : ChannelBase {
         _squareWave.reset();
         _volumeEnvelope.reset();
         _duration.reset();
-	}
+    }
 
-	public double cycle() {
+    public double cycle() {
         _frequencySweep.cycle();
 
         // Frame sequencer.
@@ -55,7 +55,7 @@ public final class Channel0 : ChannelBase {
         } else {
             return 0.0;
         }
-	}
+    }
 
     public ubyte readIO(immutable ushort address) {
         switch (address) {

@@ -18,7 +18,7 @@ public final class VideoOut : IVideoOut {
     private SDL_Window* _window;
     private SDL_Renderer* _renderer;
     private SDL_Rect _renderDest;
-	
+    
     private SDL_Texture*[] _lcdTextures;
     private int _currentLCDTexture;
     
@@ -67,18 +67,18 @@ public final class VideoOut : IVideoOut {
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, _filter.toStringz);
         SDL_RenderSetLogicalSize(_renderer, _viewportWidth * _scale, _viewportHeight * _scale);
 
-		foreach (int i; 0.._blurFrames) {
-			_lcdTextures[i] = SDL_CreateTexture(
-				_renderer,
-				SDL_PIXELFORMAT_RGBA8888,
-				SDL_TEXTUREACCESS_STREAMING,
-				LCD_WIDTH, LCD_HEIGHT
-			);
-			if (_lcdTextures[i] == null) {
-				throw new Throwable(format("Could not create LCD texture %d: %s", i, SDL_GetError()));
-			}
+        foreach (int i; 0.._blurFrames) {
+            _lcdTextures[i] = SDL_CreateTexture(
+                _renderer,
+                SDL_PIXELFORMAT_RGBA8888,
+                SDL_TEXTUREACCESS_STREAMING,
+                LCD_WIDTH, LCD_HEIGHT
+            );
+            if (_lcdTextures[i] == null) {
+                throw new Throwable(format("Could not create LCD texture %d: %s", i, SDL_GetError()));
+            }
             SDL_SetTextureBlendMode(_lcdTextures[i], SDL_BLENDMODE_BLEND);
-		}
+        }
 
         _renderDest.x = _borderHorizontal * _scale;
         _renderDest.y = _borderVertical * _scale;

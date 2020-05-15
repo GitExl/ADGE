@@ -11,7 +11,7 @@ import Core.Audio.Duration;
 private immutable ubyte[] VOLUME_SHIFT = [4, 0, 1, 2];
 
 public final class Channel2 : ChannelBase {
-	
+    
     private ushort _frameTicks;
 
     private ubyte[16] _samples;
@@ -20,7 +20,7 @@ public final class Channel2 : ChannelBase {
     private int _sampleTick;
     private bool _waveFormRead;
 
-	private ushort _frequency;
+    private ushort _frequency;
     private ubyte _volumeShift;
 
     private Duration _duration;
@@ -29,7 +29,7 @@ public final class Channel2 : ChannelBase {
         _duration = new Duration(this, 256);
     }
 
-	public void reset() {
+    public void reset() {
         _frameTicks = 0;
 
         // Should be mostly random, this is just one possible set.
@@ -45,9 +45,9 @@ public final class Channel2 : ChannelBase {
         _volumeShift = VOLUME_SHIFT[_volume];
 
         _duration.reset();
-	}
+    }
 
-	public double cycle() {
+    public double cycle() {
 
         // Frame sequencer.
         if (!_frameTicks) {
@@ -74,7 +74,7 @@ public final class Channel2 : ChannelBase {
         }
 
         return 0.0;
-	}
+    }
 
     public ubyte readIO(immutable ushort address) {
         switch (address) {

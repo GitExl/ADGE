@@ -25,8 +25,8 @@ private enum Hardware : ubyte {
 public final class Cart : IGameboyDevice {
     private ubyte[] _rom;
     private ubyte[] _ram;
-	private string _ramFileName;
-	private ubyte _ramMask;
+    private string _ramFileName;
+    private ubyte _ramMask;
 
     private string _title;
     private string _licensee;
@@ -48,9 +48,9 @@ public final class Cart : IGameboyDevice {
     }
 
     public void reset() {
-		if (_mbc !is null) {
-			_mbc.reset();
-		}
+        if (_mbc !is null) {
+            _mbc.reset();
+        }
     }
 
     public void cycle() {
@@ -97,7 +97,7 @@ public final class Cart : IGameboyDevice {
                 throw new Exception("Invalid cartridge ROM size.");
         }
 
-		_ramMask = 0xFF;
+        _ramMask = 0xFF;
         switch (_rom[0x0147]) {
             case 0x00: _mbc = new MBCNone(); _hardware = cast(Hardware)(0); break;
             case 0x01: _mbc = new MBC1(); _hardware = cast(Hardware)(0); break;
@@ -168,7 +168,7 @@ public final class Cart : IGameboyDevice {
         if (!(_hardware & Hardware.RAM)) {
             return 0;
         }
-		
+        
         return _ram[_mbc.ramBank * 0x2000 + (address - 0xA000)] & _ramMask;
     }
 

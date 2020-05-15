@@ -8,7 +8,7 @@ public class FrequencySweep {
     private IChannel _channel;
     private SquareWave _squareWave;
 
-	private int _tick;
+    private int _tick;
     private int _shift;
     private bool _negative;
     private int _tempo;

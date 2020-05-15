@@ -24,7 +24,7 @@ public struct GBSample {
 }
 
 public final class APU : IGameboyDevice {
-	private Gameboy _gameboy;
+    private Gameboy _gameboy;
 
     private IChannel[4] _channels;
 
@@ -34,10 +34,10 @@ public final class APU : IGameboyDevice {
     private bool[4] _channelToOutR;
 
     private bool _vinToOutL;
-	private bool _vinToOutR;
+    private bool _vinToOutR;
 
-	private ubyte _outLVolume;
-	private ubyte _outRVolume;
+    private ubyte _outLVolume;
+    private ubyte _outRVolume;
 
     private GBSample _systemSampleSum;
     private double _systemSampleCycles;
@@ -63,11 +63,11 @@ public final class APU : IGameboyDevice {
         t = new SystemTimer();
     }
 
-	public void attach(Gameboy gameboy) {
+    public void attach(Gameboy gameboy) {
         _gameboy = gameboy;
-	}
+    }
 
-	public void reset() {
+    public void reset() {
         _enabled = false;
 
         _channelToOutL[] = false;
@@ -93,9 +93,9 @@ public final class APU : IGameboyDevice {
 
         tstart = t.getCounter();
         ts = t.getCounter();
-	}
+    }
 
-	public void cycle() {
+    public void cycle() {
         cc += 4;
         if (t.getCounter() - ts >= 1000000) {
             ts = t.getCounter();
@@ -173,7 +173,7 @@ public final class APU : IGameboyDevice {
                 _systemSampleSum.r = 0.0;
             }
         }
-	}
+    }
 
     public ubyte readIO(immutable ushort address) {
         switch (address) {

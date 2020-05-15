@@ -52,7 +52,7 @@ int main(string[] argv) {
     videoOut.setWindowTitle("GameBoy2 - " ~ gameboy.cart.title);
     
     gameboy.lcd.vblankCallback = delegate void() {
-		static ulong frame;
+        static ulong frame;
         frame++;
 
         const bool render = !keys[SDL_SCANCODE_GRAVE] || (frame % fastForwardFrameSkip) == 0;
@@ -64,7 +64,7 @@ int main(string[] argv) {
         if (!videoOut.vsync) {
             if (!keys[SDL_SCANCODE_GRAVE]) {
                 immutable long delay = cast(long)((1.0 / gameboy.videoRefreshRate) * 1000000 - timer.stop());
-			    if (delay > 0) {
+                if (delay > 0) {
                     timer.wait(delay);
                 }
                 timer.start();

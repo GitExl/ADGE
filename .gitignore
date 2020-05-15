@@ -8,3 +8,4 @@ roms
 *.dll
 .vs
 *.sln
+*.exe

@@ -7,8 +7,8 @@ public class VolumeEnvelope {
     private IChannel _channel;
 
     private int _tick;
-	private ubyte _initial;
-	private ubyte _length;
+    private ubyte _initial;
+    private ubyte _length;
     private bool _negative;
     private int _counter;
 

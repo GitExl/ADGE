@@ -9,7 +9,7 @@ public class Duration {
 
     private int _length;
     private int _lengthTick;
-	private bool _stop;
+    private bool _stop;
 
     public this(IChannel channel, immutable int max) {
         _channel = channel;
