@@ -9,6 +9,7 @@ import Core.MBC.IMBC;
 import Core.MBC.MBCNone;
 import Core.MBC.MBC1;
 import Core.MBC.MBC2;
+import Core.MBC.MBC3;
 
 import Core.IGameboyDevice;
 import Core.Gameboy;
@@ -110,11 +111,11 @@ public final class Cart : IGameboyDevice {
             //case 0x0B: _mbc = MBC.MMM01; _hardware = cast(Hardware)(0); break;
             //case 0x0C: _mbc = MBC.MMM01; _hardware = cast(Hardware)(Hardware.RAM); break;
             //case 0x0D: _mbc = MBC.MMM01; _hardware = cast(Hardware)(Hardware.RAM | Hardware.BATTERY); break;
-            //case 0x0F: _mbc = MBC.MBC3; _hardware = cast(Hardware)(Hardware.TIMER | Hardware.BATTERY); break;
-            //case 0x10: _mbc = MBC.MBC3; _hardware = cast(Hardware)(Hardware.TIMER | Hardware.RAM | Hardware.BATTERY); break;
-            //case 0x11: _mbc = MBC.MBC3; _hardware = cast(Hardware)(0); break;
-            //case 0x12: _mbc = MBC.MBC3; _hardware = cast(Hardware)(Hardware.RAM); break;
-            //case 0x13: _mbc = MBC.MBC3; _hardware = cast(Hardware)(Hardware.RAM | Hardware.BATTERY); break;
+            case 0x0F: _mbc = new MBC3(); _hardware = cast(Hardware)(Hardware.TIMER | Hardware.BATTERY); break;
+            case 0x10: _mbc = new MBC3(); _hardware = cast(Hardware)(Hardware.TIMER | Hardware.RAM | Hardware.BATTERY); break;
+            case 0x11: _mbc = new MBC3(); _hardware = cast(Hardware)(0); break;
+            case 0x12: _mbc = new MBC3(); _hardware = cast(Hardware)(Hardware.RAM); break;
+            case 0x13: _mbc = new MBC3(); _hardware = cast(Hardware)(Hardware.RAM | Hardware.BATTERY); break;
             //case 0x19: _mbc = MBC.MBC5; _hardware = cast(Hardware)(0); break;
             //case 0x1A: _mbc = MBC.MBC5; _hardware = cast(Hardware)(Hardware.RAM); break;
             //case 0x1B: _mbc = MBC.MBC5; _hardware = cast(Hardware)(Hardware.RAM | Hardware.BATTERY); break;
