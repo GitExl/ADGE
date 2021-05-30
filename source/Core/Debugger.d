@@ -12,8 +12,7 @@ import Core.LCD;
 import Core.Cart;
 import Core.IGameboyDevice;
 import Core.Gameboy;
-
-import Disassembler;
+import Core.Disassembler;
 
 
 public final class Debugger : IGameboyDevice {

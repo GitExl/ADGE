@@ -1,4 +1,4 @@
-module Palette;
+module App.Palette;
 
 import std.json;
 import std.conv;

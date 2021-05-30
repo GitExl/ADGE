@@ -1,4 +1,4 @@
-module Config;
+module App.Config;
 
 import std.json;
 import std.file;

@@ -2,7 +2,7 @@ module Interface.SDL.SystemTimer;
 
 import std.stdio;
 
-import derelict.sdl2.sdl;
+import bindbc.sdl.bind.sdltimer;
 
 import Interface.ISystemTimer;
 

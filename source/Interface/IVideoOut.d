@@ -1,8 +1,5 @@
 module Interface.IVideoOut;
 
-import Config;
-
-
 public interface IVideoOut {
     public void destroy();
     public void renderFrame(const ushort[] buffer);

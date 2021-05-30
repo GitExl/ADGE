@@ -12,8 +12,6 @@ import Core.Joypad;
 import Core.BootROM;
 import Core.APU;
 
-import Config;
-
 
 public enum GameboyMode : ubyte {
     CLASSIC,
@@ -49,8 +47,8 @@ public final class Gameboy {
 
     private bool _frameComplete;
 
-    public this(Config cfg) {
-        switch (cfg.get("gameboy.mode").str) {
+    public this(string mode, string bootRom) {
+        switch (mode) {
             case "dmg":
             case "mgb":
                 _mode = GameboyMode.CLASSIC;
@@ -83,7 +81,7 @@ public final class Gameboy {
         _lcd = new LCD();
         _joypad = new Joypad();
         _apu = new APU();
-        _bootrom = new BootROM("boot/" ~ cfg.get("gameboy.boot_rom").str ~ ".bin");
+        _bootrom = new BootROM("boot/" ~ bootRom ~ ".bin");
         _dbg = new Debugger();
         
         _cpu.attach(this);

@@ -1,4 +1,4 @@
-module Disassembler;
+module Core.Disassembler;
 
 import std.stdio;
 import std.string;

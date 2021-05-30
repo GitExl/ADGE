@@ -1,6 +1,6 @@
 module Interface.IAudioOut;
 
-import Config;
+import App.Config;
 
 
 public alias void delegate(immutable double[2] buffer) AudioBufferCallback;

@@ -3,12 +3,12 @@ import std.string;
 
 import core.stdc.string;
 
-import derelict.sdl2.sdl;
+import bindbc.sdl;
 
 import Core.Joypad;
 import Core.Gameboy;
 
-import Config;
+import App.Config;
 
 import Interface.ISystemTimer;
 import Interface.IVideoOut;
@@ -38,7 +38,6 @@ int main(string[] argv) {
     initSDL();
 
     ISystemTimer timer = new SystemTimer();
-
     IVideoOut videoOut = new VideoOut(cfg, "GameBoy2");
     IAudioOut audioOut = new AudioOut(cfg);
 
@@ -47,7 +46,7 @@ int main(string[] argv) {
         throw new Exception("fast_forward_frameskip must be from 2 to 60.");
     }
 
-    Gameboy gameboy = new Gameboy(cfg);
+    Gameboy gameboy = new Gameboy(cfg.get("gameboy.mode").str, cfg.get("gameboy.boot_rom").str);
     gameboy.loadCart(fileName);
     videoOut.setWindowTitle("GameBoy2 - " ~ gameboy.cart.title);
     
@@ -149,7 +148,15 @@ private void updateJoypad(Joypad joypad, immutable int scancode, immutable bool 
 }
 
 private void initSDL() {
-    DerelictSDL2.load();
+    SDLSupport ret = loadSDL();
+    if (ret != sdlSupport) {
+        if (ret == SDLSupport.noLibrary) {
+            throw new Exception("Unable to load SDL, no library found.");
+        }
+        if (ret == SDLSupport.badLibrary) {
+            throw new Exception("Unable to load SDL, mismatched library version found.");
+        }
+    }
 
     SDL_version sdlVersionCompiled;
     SDL_version sdlVersionLinked;

@@ -3,12 +3,19 @@ module Interface.SDL.VideoOut;
 import std.stdio;
 import std.string;
 
-import derelict.sdl2.sdl;
+import bindbc.sdl.bind.sdl;
+import bindbc.sdl.bind.sdlerror;
+import bindbc.sdl.bind.sdlvideo;
+import bindbc.sdl.bind.sdlrender;
+import bindbc.sdl.bind.sdlrect;
+import bindbc.sdl.bind.sdlpixels;
+import bindbc.sdl.bind.sdlhints;
+import bindbc.sdl.bind.sdlblendmode;
 
 import Interface.IVideoOut;
 
-import Palette;
-import Config;
+import App.Palette;
+import App.Config;
 
 
 private immutable uint LCD_WIDTH = 160;

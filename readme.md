@@ -42,7 +42,8 @@ The default configuration:
     "volume": 1.0,
     "highpass_filter": true,
     "buffer_size": 512,
-    "output_filename": ""
+    "output_filename": "",
+    "device_index": 0
   },
 ```
 
@@ -82,6 +83,9 @@ does.
 
 If you want to output the raw rendered audio to a file, specify the `output_filename` option. The written file will
 contain 16 bit signed integer samples in stereo at the configured sample rate.
+
+Use the `device_index` option to specify the index of the sound device to use for playback. 0 is usually the default
+device.
 
 ### Input
 

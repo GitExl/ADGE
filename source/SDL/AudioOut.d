@@ -4,9 +4,11 @@ import std.conv;
 import std.stdio;
 import std.format;
 
-import derelict.sdl2.sdl;
+import bindbc.sdl.bind.sdl;
+import bindbc.sdl.bind.sdlerror;
+import bindbc.sdl.bind.sdlaudio;
 
-import Config;
+import App.Config;
 
 import Interface.IAudioOut;
 
@@ -17,6 +19,7 @@ public final class AudioOut : IAudioOut {
     private uint _sampleRate;
     private int _bufferSize;
     private double _volume;
+    private int _deviceIndex;
     
     private string _outputFilename;
     private File _outputFile;
@@ -34,13 +37,13 @@ public final class AudioOut : IAudioOut {
         desired.samples = cast(ushort)_bufferSize;
         desired.callback = null;
 
-        const(char)* name = SDL_GetAudioDeviceName(0, 0);
+        const(char)* name = SDL_GetAudioDeviceName(_deviceIndex, 0);
         _deviceId = SDL_OpenAudioDevice(name, 0, &desired, &obtained, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
         if (_deviceId < 0) {
             throw new Exception(format("Could not open audio device for playback. %s", SDL_GetError()));
         }
 
-        writefln("Using %s at %d Hz, %d channel(s), %d samples in buffer.",
+        writefln("Using '%s' at %d Hz, %d channel(s), %d samples in buffer.",
                  to!string(name), obtained.freq, obtained.channels, obtained.samples);
 
         _sampleRate = obtained.freq;
@@ -99,6 +102,7 @@ public final class AudioOut : IAudioOut {
         }
 
         _outputFilename = cfg.get("sound.output_filename").str;
+        _deviceIndex = cast(int)cfg.get("sound.device_index").integer;
     }
 
     @property
