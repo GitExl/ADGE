@@ -87,7 +87,7 @@ public final class CPU : IGameboyDevice {
 
     private State _state;
 
-    private bool _interruptsEnableDelay;
+    private uint _interruptsEnableDelay;
     private bool _interruptsMasterEnable;
     
     private InterruptFlag _interruptFlags;
@@ -113,7 +113,7 @@ public final class CPU : IGameboyDevice {
 
         _state = State.NORMAL;
 
-        _interruptsEnableDelay = false;
+        _interruptsEnableDelay = 0;
         _interruptsMasterEnable = false;
 
         _interruptFlags = InterruptFlag.NONE;
@@ -121,6 +121,12 @@ public final class CPU : IGameboyDevice {
     }
 
     public void cycle() {
+        if (_interruptsEnableDelay) {
+            _interruptsEnableDelay--;
+            if (!_interruptsEnableDelay) {
+                _interruptsMasterEnable = true;
+            }
+        }
 
         // STOP state, all execution is stopped.
         if (_state == State.STOPPED) {
@@ -130,6 +136,10 @@ public final class CPU : IGameboyDevice {
                 foreach (int i; 0..32768) {
                     opIO();
                 }
+                opIO();
+                opIO();
+                opIO();
+                opIO();
                 _state = State.NORMAL;
             } else {
                 opIO();
@@ -149,8 +159,8 @@ public final class CPU : IGameboyDevice {
                     _haltBug = true;
                 }
             } else {
-                handleInterrupts();
                 testInterrupts();
+                handleInterrupts();
                 opIO();
             }
 
@@ -158,10 +168,10 @@ public final class CPU : IGameboyDevice {
         } else {
 
             // Handle previously queued interrupts, then check for new ones.
-            handleInterrupts();
             if (_interruptsMasterEnable) {
                 testInterrupts();
             }
+            handleInterrupts();
 
             _dbg.cycle();
             immutable ubyte opcode = opRead8(_registers.PC++);
@@ -181,15 +191,15 @@ public final class CPU : IGameboyDevice {
     // Interrupt test and actual handling are one cycle apart. See https://mgba.io/2018/03/09/holy-grail-bugs-revisited/
     private void testInterrupts() {
         if (_interruptsEnabled & _interruptFlags & InterruptFlag.VBLANK) {
-            _interruptQueue = InterruptFlag.VBLANK;
+            _interruptQueue |= InterruptFlag.VBLANK;
         } else if (_interruptsEnabled & _interruptFlags & InterruptFlag.LCD_STATUS) {
-            _interruptQueue = InterruptFlag.LCD_STATUS;
+            _interruptQueue |= InterruptFlag.LCD_STATUS;
         } else if (_interruptsEnabled & _interruptFlags & InterruptFlag.TIMER) {
-            _interruptQueue = InterruptFlag.TIMER;
+            _interruptQueue |= InterruptFlag.TIMER;
         } else if (_interruptsEnabled & _interruptFlags & InterruptFlag.SERIAL) {
-            _interruptQueue = InterruptFlag.SERIAL;
+            _interruptQueue |= InterruptFlag.SERIAL;
         } else if (_interruptsEnabled & _interruptFlags & InterruptFlag.JOYPAD) {
-            _interruptQueue = InterruptFlag.JOYPAD;
+            _interruptQueue |= InterruptFlag.JOYPAD;
         }
     }
 
@@ -244,10 +254,6 @@ public final class CPU : IGameboyDevice {
 
     // Updates subsystems for a single CPU cycle.
     private void opIO() {
-        if (_interruptsEnableDelay) {
-            _interruptsEnableDelay = false;
-            _interruptsMasterEnable = true;
-        }
 
         // DMA memory transfer.
         // Transfer 4 bytes per cycle, for 160 cycles.
@@ -633,7 +639,7 @@ public final class CPU : IGameboyDevice {
 
             // DI, EI, RETI
             case 0xF3: _interruptsMasterEnable = false; break;
-            case 0xFB: _interruptsEnableDelay = true; break;
+            case 0xFB: _interruptsEnableDelay = 2; break;
             case 0xD9: opRETI(); break;
 
             // Extension opcode.
