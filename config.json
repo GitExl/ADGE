@@ -9,16 +9,17 @@
     "border_horizontal": 3,
     "border_vertical": 2,
     "scale": 5,
-    "vsync": true,
+    "vsync": false,
     "blur_frames": 3,
     "filter": "nearest"
   },
   "sound": {
     "sample_rate": 48000,
-    "volume": 0.15,
+    "volume": 0.5,
     "highpass_filter": true,
     "buffer_size": 512,
-    "output_filename": ""
+    "output_filename": "",
+    "device_index": 2
   },
   "input": {
     "button_a": "A",
