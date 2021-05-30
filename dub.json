@@ -8,6 +8,6 @@
 	},
 	"versions": ["SDL_2014"],
 	"description": "A D Gameboy Emulator",
-	"copyright": "Copyright © 2020, Dennis \"Exl\" Meuwissen",
+	"copyright": "Copyright © 2021, Dennis \"Exl\" Meuwissen",
 	"license": "New BSD"
 }
