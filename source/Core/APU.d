@@ -15,7 +15,6 @@ import Core.Audio.Channel2;
 import Core.Audio.Channel3;
 
 import Interface.IAudioOut;
-import Interface.SDL.SystemTimer;
 
 
 public struct GBSample {
@@ -42,25 +41,18 @@ public final class APU : IGameboyDevice {
     private GBSample _systemSampleSum;
     private double _systemSampleCycles;
     private double _cyclesPerSystemSample;
+    private double _baseCyclesPerSystemSample;
     private AudioBufferCallback _bufferFunc;
 
     private GBSample _highpassDiff;
     private double _highpassRate;
     private bool _highpassEnabled;
 
-    private int sp;
-    private int cc;
-    private ulong tstart;
-    private ulong ts;
-    private SystemTimer t;
-
     public this() {
         _channels[0] = new Channel0();
         _channels[1] = new Channel1();
         _channels[2] = new Channel2();
         _channels[3] = new Channel3();
-
-        t = new SystemTimer();
     }
 
     public void attach(Gameboy gameboy) {
@@ -90,20 +82,10 @@ public final class APU : IGameboyDevice {
         foreach (IChannel channel; _channels) {
             channel.reset();
         }
-
-        tstart = t.getCounter();
-        ts = t.getCounter();
     }
 
     public void cycle() {
-        cc += 4;
-        if (t.getCounter() - ts >= 1000000) {
-            ts = t.getCounter();
-            writefln("APU: %d cycles", cc);
-            cc = 0;
-        }
-        
-        if (_cyclesPerSystemSample == double.nan) {
+        if (isNaN(_cyclesPerSystemSample)) {
             return;
         }
 
@@ -139,14 +121,6 @@ public final class APU : IGameboyDevice {
             // Output a system sample if enough cycles have passed that one has to be generated.
             _systemSampleCycles++;
             if (_systemSampleCycles >= _cyclesPerSystemSample) {
-
-                sp++;
-                ulong el = t.getCounter();
-                if (el - tstart >= 1000000) {
-                    tstart = el;
-                    writefln("%d samples\\s, %.03f cycles", sp, _systemSampleCycles);
-                    sp = 0;
-                }
 
                 // Average the summed sample over the number of cycles that were used to generate it.
                 // The sample cycle divisor is truncated because we generated a sum of complete samples up to this point.
@@ -256,12 +230,18 @@ public final class APU : IGameboyDevice {
     }
 
     public void setSystemSampleRate(immutable uint systemSampleRate) {
-        _cyclesPerSystemSample = (cast(double)_gameboy.clockRate / cast(double)systemSampleRate) / 2.0;
+        _baseCyclesPerSystemSample = (cast(double)_gameboy.clockRate / cast(double)systemSampleRate) / 2.0;
+        _cyclesPerSystemSample = _baseCyclesPerSystemSample;
 
         // TODO: 0.998943 for MGB\CGB
         _highpassRate = pow(0.999958, cast(double)_gameboy.clockRate / cast(double)systemSampleRate);
         
         writefln("%06f cycles per system sample, %.08f highpass rate", _cyclesPerSystemSample, _highpassRate);
+    }
+
+    // Scales the output sample rate by ratio, to keep pace with the audio device's clock.
+    public void adjustSampleRate(immutable double ratio) {
+        _cyclesPerSystemSample = _baseCyclesPerSystemSample / ratio;
     }
 
     @property

@@ -9,6 +9,7 @@ import Core.Joypad;
 import Core.Gameboy;
 
 import App.Config;
+import App.RateControl;
 
 import Interface.ISystemTimer;
 import Interface.IVideoOut;
@@ -24,6 +25,7 @@ private Config cfg;
 private bool running;
 private ubyte[SDL_NUM_SCANCODES] keys;
 private int fastForwardFrameSkip = 5;
+private double frameDeadline;
 
 
 int main(string[] argv) {
@@ -60,15 +62,11 @@ int main(string[] argv) {
             videoOut.renderFrame(gameboy.lcd.buffer);
         }
         
-        if (!videoOut.vsync) {
-            if (!keys[SDL_SCANCODE_GRAVE]) {
-                immutable long delay = cast(long)((1.0 / gameboy.videoRefreshRate) * 1000000 - timer.stop());
-                if (delay > 0) {
-                    timer.wait(delay);
-                }
-                timer.start();
-            }
+        if (!videoOut.vsync && !keys[SDL_SCANCODE_GRAVE]) {
+            waitFrame(timer, gameboy.videoRefreshRate);
         }
+
+        gameboy.apu.adjustSampleRate(rateRatio(audioOut.queuedSamples, audioOut.bufferSize * 2));
     };
     
     gameboy.apu.setSystemSampleRate(audioOut.sampleRate);
@@ -79,7 +77,7 @@ int main(string[] argv) {
 
     SDL_Event event;
     running = true;
-    timer.start();
+    frameDeadline = timer.getCounter();
     while (running) {
         if (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -119,6 +117,24 @@ int main(string[] argv) {
     videoOut.destroy();
     destroySDL();
     return 0;
+}
+
+// Paces against absolute deadlines, so a late frame is made up by the next ones instead of being lost.
+private void waitFrame(ISystemTimer timer, immutable double refreshRate) {
+    immutable double frameTime = 1000000.0 / refreshRate;
+    frameDeadline += frameTime;
+
+    immutable ulong now = timer.getCounter();
+    if (now >= frameDeadline) {
+
+        // Resync after a stall or fast-forward instead of racing to catch up.
+        if (now > frameDeadline + frameTime) {
+            frameDeadline = now;
+        }
+        return;
+    }
+
+    timer.wait(cast(ulong)(frameDeadline - now));
 }
 
 private void updateJoypad(Joypad joypad, immutable int scancode, immutable bool state) {

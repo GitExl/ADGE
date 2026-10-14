@@ -106,7 +106,6 @@ public final class Debugger : IGameboyDevice {
                     writeln("Quitting.");
                     _cart.storeRAM();
                     exit(0);
-                    return;
 
                 case "dump":
                     string filename = "ram.bin";

@@ -70,7 +70,7 @@ public final class AudioOut : IAudioOut {
 
         // Prevent overflow by limiting queued samples to 1/16th of a second.
         // This is useful for fast-forwarding, but should never happen during normal execution.
-        if (SDL_GetQueuedAudioSize(_deviceId) / (short.sizeof * 2) >= _sampleRate / 16) {
+        if (queuedSamples >= _sampleRate / 16) {
             return;
         }
 
@@ -108,5 +108,15 @@ public final class AudioOut : IAudioOut {
     @property
     public uint sampleRate() {
         return _sampleRate;
+    }
+
+    @property
+    public uint bufferSize() {
+        return _bufferSize;
+    }
+
+    @property
+    public uint queuedSamples() {
+        return cast(uint)(SDL_GetQueuedAudioSize(_deviceId) / (short.sizeof * 2));
     }
 }

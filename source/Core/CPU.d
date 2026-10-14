@@ -9,6 +9,10 @@ import Core.IGameboyDevice;
 import Core.Gameboy;
 
 
+// OAM DMA copies one byte per M-cycle, after one M-cycle of setup.
+private immutable uint DMA_CYCLES_TRANSFER = 160 * 4;
+private immutable uint DMA_CYCLES_SETUP = 4;
+
 // ALU flags set by many instructions.
 public enum ALUFlag : ubyte {
     CARRY      = 0x10,
@@ -256,13 +260,9 @@ public final class CPU : IGameboyDevice {
     private void opIO() {
 
         // DMA memory transfer.
-        // Transfer 4 bytes per cycle, for 160 cycles.
         if (_dmaCycles) {            
-            if (_dmaCycles <= 160) {
-                _mmu.write8(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
-                _mmu.write8(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
-                _mmu.write8(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
-                _mmu.write8(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
+            if (_dmaCycles <= DMA_CYCLES_TRANSFER) {
+                _gameboy.lcd.writeOAMDirect(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
             }
 
             _dmaCycles -= 4;
@@ -274,31 +274,25 @@ public final class CPU : IGameboyDevice {
     // Single cycle instruction to read a byte from memory.
     private ubyte opRead8(immutable ushort address) {
         opIO();
-
         if (isAddressInDMAUse(address)) {
             return 0;
-        }
-        
+        }        
         return _mmu.read8(address);
     }
 
     // Two cycle instruction to read a word from memory;
     private ushort opRead16(immutable ushort address) {
-        opIO();
-        ushort data = _mmu.read8(address);
-        opIO();
-        data |= _mmu.read8(cast(ushort)(address + 1)) << 8;
+        ushort data = opRead8(address);
+        data |= opRead8(cast(ushort)(address + 1)) << 8;
         return data;
     }
 
     // Single cycle instruction to write a byte to memory.
     private void opWrite8(immutable ushort address, immutable ubyte data) {
         opIO();
-
         if (isAddressInDMAUse(address)) {
             return;
         }
-
         _mmu.write8(address, data);
     }
 
@@ -1574,9 +1568,8 @@ public final class CPU : IGameboyDevice {
     @property
     public void dmaAddress(immutable ubyte value) {
         
-        // 160 + 8 setup cycles.
         if (value < 0xF2) {
-            _dmaCycles = 168;
+            _dmaCycles = DMA_CYCLES_TRANSFER + DMA_CYCLES_SETUP;
         }
 
         _dmaAddress = value;
@@ -1590,7 +1583,7 @@ public final class CPU : IGameboyDevice {
     public ubyte dmaAddress() {
 
         // While DMA is active, this register returns the last byte written.
-        if (_dmaCycles && _dmaCycles < 160) {
+        if (_dmaCycles && _dmaCycles < DMA_CYCLES_TRANSFER) {
             stdout.flush();
             return _mmu.read8(_dmaCurrentSrc);
         }
@@ -1598,4 +1591,38 @@ public final class CPU : IGameboyDevice {
         stdout.flush();
         return _dmaAddress;
     }
+}
+
+// OAM DMA writes reach OAM even while the PPU is drawing.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    foreach (ushort i; 0 .. 0xA0) {
+        gameboy.mmu.write8(cast(ushort)(0xC000 + i), cast(ubyte)(i + 1));
+    }
+    gameboy.lcd.control = 0x80;
+
+    gameboy.cpu.dmaAddress = 0xC0;
+    foreach (i; 0 .. 161) {
+        gameboy.cpu.opIO();
+    }
+
+    foreach (ushort i; 0 .. 0xA0) {
+        assert(gameboy.lcd.readOAMDirect(cast(ushort)(0xFE00 + i)) == i + 1);
+    }
+}
+
+// OAM DMA copies one byte per M-cycle, after one setup M-cycle.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    foreach (ushort i; 0 .. 0xA0) {
+        gameboy.mmu.write8(cast(ushort)(0xC000 + i), cast(ubyte)(i + 1));
+    }
+
+    gameboy.cpu.dmaAddress = 0xC0;
+    foreach (i; 0 .. 81) {
+        gameboy.cpu.opIO();
+    }
+
+    assert(gameboy.lcd.readOAMDirect(0xFE4F) == 0x50);
+    assert(gameboy.lcd.readOAMDirect(0xFE50) == 0);
 }

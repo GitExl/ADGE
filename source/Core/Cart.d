@@ -74,10 +74,12 @@ public final class Cart : IGameboyDevice {
         _checksumGlobal = _rom[0x014E] | (_rom[0x014F] >> 8);
         
         switch (_rom[0x0149]) {
-            case 0x00: _ram.length = 0x0000; break;
-            case 0x01: _ram.length = 0x0800; break;
-            case 0x02: _ram.length = 0x2000; break;
-            case 0x03: _ram.length = 0x8000; break;
+            case 0x00: _ram.length = 0x00000; break;
+            case 0x01: _ram.length = 0x00800; break;
+            case 0x02: _ram.length = 0x02000; break;
+            case 0x03: _ram.length = 0x08000; break;
+            case 0x04: _ram.length = 0x20000; break;
+            case 0x05: _ram.length = 0x10000; break;
             default:
                 throw new Exception("Invalid cartridge RAM size.");
         }
@@ -174,7 +176,7 @@ public final class Cart : IGameboyDevice {
     }
 
     public void writeRAM(immutable ushort address, immutable ubyte value) {
-        if (!(_hardware & Hardware.RAM)) {
+        if (!(_hardware & Hardware.RAM) || !_ram.length) {
             return;
         }
         if (!_mbc.ramWriteEnabled) {
@@ -185,7 +187,7 @@ public final class Cart : IGameboyDevice {
     }
 
     public void storeRAM() {
-        if (!(_hardware & Hardware.RAM) || !(_hardware & Hardware.BATTERY)) {
+        if (!(_hardware & Hardware.RAM) || !_ram.length || !(_hardware & Hardware.BATTERY)) {
             return;
         }
 
@@ -194,7 +196,7 @@ public final class Cart : IGameboyDevice {
     }
 
     public void restoreRAM() {
-        if (!(_hardware & Hardware.RAM) || !(_hardware & Hardware.BATTERY)) {
+        if (!(_hardware & Hardware.RAM) || !_ram.length || !(_hardware & Hardware.BATTERY)) {
             return;
         }
         if (!exists(_ramFileName)) {

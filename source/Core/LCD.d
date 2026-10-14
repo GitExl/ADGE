@@ -131,8 +131,8 @@ public final class LCD : IGameboyDevice {
     
     private ubyte[0x2000] _vram;
     private ubyte[0xA0] _oam;
-    private ushort[DISPLAY_WIDTH * DISPLAY_HEIGHT] _buffer;    
-
+    private ushort[DISPLAY_WIDTH * DISPLAY_HEIGHT] _buffer; 
+    
     public void attach(Gameboy gameboy) {
         _gameboy = gameboy;
         _cpu = gameboy.cpu;
@@ -161,7 +161,7 @@ public final class LCD : IGameboyDevice {
         setPalette(_paletteSprite1, 0);
 
         _mode = Mode.OAM;
-        _modeCycles = CYCLES_MODE_OAM;
+        _modeCycles = 0;
         
         _vram[] = 0;
         _oam[] = 0;
@@ -171,84 +171,64 @@ public final class LCD : IGameboyDevice {
     public void cycle() {
         _vblankTriggered = false;
 
-        /*// The PPU does not advance while in STOP mode on the DMG 
-        if (gb->stopped && !GB_is_cgb(gb)) {
-            gb->cycles_in_stop_mode += cycles;
-            if (gb->cycles_in_stop_mode >= LCDC_PERIOD) {
-                gb->cycles_in_stop_mode -= LCDC_PERIOD;
-                display_vblank(gb);
-            }
-            return;
-        }*/
+        _modeCycles += 4;
+        switch (_mode) {
+            case Mode.OAM:
+                if (_modeCycles >= CYCLES_MODE_OAM) {
+                    _modeCycles -= CYCLES_MODE_OAM;
+                    setMode(Mode.DATA);
+                    prepareScanline(_scanline);
+                }
+                break;
 
-        if (!_modeCycles) {
-            if (_enabled) {
-                if (_mode == Mode.OAM) {
-                    setMode(Mode.DATA, CYCLES_MODE_DATA);
+            case Mode.DATA:
+                if (_modeCycles >= CYCLES_MODE_DATA) {
+                    _modeCycles -= CYCLES_MODE_DATA;
+                    setMode(Mode.HBLANK);
+                    renderScanline(_scanline);
+                }
+                break;
 
-                } else if (_mode == Mode.DATA) {
-                    setMode(Mode.HBLANK, CYCLES_MODE_HBLANK);
-
-                } else if (_mode == Mode.HBLANK) {
-                    setScanline(cast(ubyte)(_scanline + 1));
-                    if (_scanline == 144) {
-                        setMode(Mode.VBLANK, CYCLES_MODE_VBLANK_LINE);
-                    } else {
-                        setMode(Mode.OAM, CYCLES_MODE_OAM);
-                    }
-
-                } else if (_mode == Mode.VBLANK) {
-                    if (_scanline == 153) {
+            case Mode.HBLANK:
+                if (_modeCycles >= CYCLES_MODE_HBLANK) {
+                    _modeCycles -= CYCLES_MODE_HBLANK;
+                    if (_scanline == 143) {
+                        setMode(Mode.VBLANK);
                         vblank();
+                    } else {
+                        setMode(Mode.OAM);
+                    }                    
+                    setScanline(cast(ubyte)(_scanline + 1));
+                }
+                break;
+
+            case Mode.VBLANK:
+                if (_modeCycles >= CYCLES_MODE_VBLANK_LINE) {
+                    _modeCycles -= CYCLES_MODE_VBLANK_LINE;
+                    
+                    if (_scanline == 153) {
+                        setMode(Mode.OAM);
                         setScanline(0);
-                        setMode(Mode.OAM, CYCLES_MODE_OAM);
                     } else {
                         setScanline(cast(ubyte)(_scanline + 1));
-                        _modeCycles = CYCLES_MODE_VBLANK_LINE;
                     }
                 }
-            
-            } else {
-                if (_scanline == 153) {
-                    vblank();
-                    setScanline(0);
-                    _modeCycles = CYCLES_MODE_VBLANK_LINE;
-                } else {
-                    setScanline(cast(ubyte)(_scanline + 1));
-                    _modeCycles = CYCLES_MODE_VBLANK_LINE;
-                }
-            }
+                break;
+            default:
+                break;
         }
-        _modeCycles -= 4;            
     }
 
     private void setScanline(immutable ubyte scanline) {
         _scanline = scanline;
-
-        if (_scanline == 144) {
-            /* Entering VBlank state triggers the OAM interrupt */
-            //gb->io_registers[GB_IO_STAT] &= ~3;
-            //gb->io_registers[GB_IO_STAT] |= 1;
-
-//            _cpu.triggerInterrupt(InterruptFlag.VBLANK);
-        }
 
         if (_enabled && _interruptScanline && _scanline == _scanlineCmp) {
             _cpu.triggerInterrupt(InterruptFlag.LCD_STATUS);
         }
     }
 
-    private void setMode(immutable Mode mode, immutable int cycles) {
+    private void setMode(immutable Mode mode) {
         _mode = mode;
-        _modeCycles = cycles;
-
-        if (_mode == Mode.OAM) {
-            prepareScanline(_scanline);
-        } else if (_mode == Mode.DATA) {
-            renderScanline(_scanline);
-        }
-
-        //testInterrupts();
 
         // Trigger mode interrupts.
         if (_enabled) {
@@ -505,6 +485,11 @@ public final class LCD : IGameboyDevice {
         return _oam[address - ADDR_OAM_BASE];
     }
 
+    // DMA bypasses the PPU's OAM lock.
+    public void writeOAMDirect(immutable ushort address, immutable ubyte data) {
+        _oam[address - ADDR_OAM_BASE] = data;
+    }
+
     private void setPalette(ref Palette pal, immutable ubyte value) {
         for (ubyte i = 0; i < 4; i++) {
             pal[i] = (value >> (i * 2)) & 0x03;
@@ -522,7 +507,7 @@ public final class LCD : IGameboyDevice {
     private void lcdEnable() {
         _scanline = 0;
         _mode = Mode.OAM;
-        _modeCycles = CYCLES_MODE_OAM;
+        _modeCycles = 0;
     }
 
     @property

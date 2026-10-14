@@ -9,4 +9,6 @@ public interface IAudioOut {
     public void queueSample(immutable double[2] buffer);
     public void destroy();
     @property public uint sampleRate();
+    @property public uint bufferSize();
+    @property public uint queuedSamples();
 }

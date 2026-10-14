@@ -25,9 +25,9 @@ private immutable uint CLOCKRATE_CGB = 8388608;
 private immutable uint CLOCKRATE_SGB = 4295454;
 private immutable uint CLOCKRATE_SGB2 = 4194304;
 
-private immutable double VIDEO_REFRESH_GMB = 59.727500;
-private immutable double VIDEO_REFRESH_SGB = 61.167891;
-private immutable double VIDEO_REFRESH_SGB2 = 59.727500;
+private immutable double VIDEO_REFRESH_GMB = 59.727500569606;
+private immutable double VIDEO_REFRESH_SGB = 60.098813897441;
+private immutable double VIDEO_REFRESH_SGB2 = 59.727500569606;
 
 public final class Gameboy {
     private GameboyMode _mode;
@@ -44,7 +44,6 @@ public final class Gameboy {
 
     private int _clockRate;
     private double _videoRefreshRate;
-
     private bool _frameComplete;
 
     public this(string mode, string bootRom) {
