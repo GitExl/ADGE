@@ -7,6 +7,21 @@
 		"bindbc-sdl": "~>0.21.4"
 	},
 	"versions": ["SDL_2014"],
+	"configurations": [
+		{
+			"name": "application",
+			"targetType": "executable",
+			"mainSourceFile": "source/app.d",
+			"excludedSourceFiles": ["source/Tools/*"]
+		},
+		{
+			"name": "mooneye",
+			"targetType": "executable",
+			"targetName": "adge-mooneye",
+			"mainSourceFile": "source/Tools/Mooneye.d",
+			"excludedSourceFiles": ["source/app.d"]
+		}
+	],
 	"description": "A D Gameboy Emulator",
 	"copyright": "Copyright © 2021, Dennis \"Exl\" Meuwissen",
 	"license": "New BSD"

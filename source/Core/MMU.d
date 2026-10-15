@@ -12,6 +12,7 @@ import Core.IGameboyDevice;
 import Core.BootROM;
 import Core.Gameboy;
 import Core.APU;
+import Core.Serial;
 
 
 public enum IO : ushort {
@@ -91,6 +92,7 @@ public final class MMU : IGameboyDevice {
     private CPU _cpu;
     private LCD _lcd;
     private Joypad _joypad;
+    private Serial _serial;
     private APU _apu;
     private BootROM _bootrom;
 
@@ -105,6 +107,7 @@ public final class MMU : IGameboyDevice {
         _cpu = gameboy.cpu;
         _lcd = gameboy.lcd;
         _joypad = gameboy.joypad;
+        _serial = gameboy.serial;
         _apu = gameboy.apu;
         _bootrom = gameboy.bootrom;
     }
@@ -157,9 +160,13 @@ public final class MMU : IGameboyDevice {
                 break;
 
             case 0xF000:
-                
+
+                // RAM echo, up to OAM.
+                if (address < 0xFE00) {
+                    _ram[address - 0xE000] = data;
+
                 // Object attributes.
-                if (address >= 0xFE00 && address <= 0xFE9F) {
+                } else if (address >= 0xFE00 && address <= 0xFE9F) {
                     _lcd.writeOAM(address, data);
 
                 // IO registers.
@@ -217,9 +224,13 @@ public final class MMU : IGameboyDevice {
                 return _ram[address - 0xE000];
 
             case 0xF000:
-                
+
+                // RAM echo, up to OAM.
+                if (address < 0xFE00) {
+                    return _ram[address - 0xE000];
+
                 // Object attributes.
-                if (address >= 0xFE00 && address <= 0xFE9F) {
+                } else if (address >= 0xFE00 && address <= 0xFE9F) {
                     return _lcd.readOAM(address);
 
                 // IO registers.
@@ -282,33 +293,7 @@ public final class MMU : IGameboyDevice {
 
             // Audio.
             case IO.SND10:
-            case IO.SND11:
-            case IO.SND12:
-            case IO.SND13:
-            case IO.SND14:
-                return _apu.channel(0).readIO(address);
-
-            case IO.SND21:
-            case IO.SND22:
-            case IO.SND23:
-            case IO.SND24:
-                return _apu.channel(1).readIO(address);
-
-            case IO.SND30:
-            case IO.SND31:
-            case IO.SND32:
-            case IO.SND33:
-            case IO.SND34:
-                return _apu.channel(2).readIO(address);
-
-            case IO.SND41:
-            case IO.SND42:
-            case IO.SND43:
-            case IO.SND44:
-                return _apu.channel(3).readIO(address);
-
-            case IO.SND50:
-            case IO.SND51:
+            ..
             case IO.SND52:
                 return _apu.readIO(address);
 
@@ -317,10 +302,11 @@ public final class MMU : IGameboyDevice {
             case IO.SND_WAVE_END:
                 return _apu.readWave(address);
 
-            // Stubbed serial IO.
-            case IO.SERIAL_CONTROL:
+            // Serial.
             case IO.SERIAL_DATA:
-                return 0xFF;
+                return _serial.data;
+            case IO.SERIAL_CONTROL:
+                return _serial.control;
 
             // Timers.
             case IO.TIMER_DIV:
@@ -338,8 +324,9 @@ public final class MMU : IGameboyDevice {
             case IO.INT_FLAGS:
                 return _cpu.interruptFlags;
 
+            // Unmapped IO.
             default:
-                return 0x00;
+                return 0xFF;
         }
     }
 
@@ -391,37 +378,7 @@ public final class MMU : IGameboyDevice {
 
             // Sound IO.
             case IO.SND10:
-            case IO.SND11:
-            case IO.SND12:
-            case IO.SND13:
-            case IO.SND14:
-                _apu.channel(0).writeIO(address, data);
-                break;
-
-            case IO.SND21:
-            case IO.SND22:
-            case IO.SND23:
-            case IO.SND24:
-                _apu.channel(1).writeIO(address, data);
-                break;
-
-            case IO.SND30:
-            case IO.SND31:
-            case IO.SND32:
-            case IO.SND33:
-            case IO.SND34:
-                _apu.channel(2).writeIO(address, data);
-                break;
-
-            case IO.SND41:
-            case IO.SND42:
-            case IO.SND43:
-            case IO.SND44:
-                _apu.channel(3).writeIO(address, data);
-                break;
-
-            case IO.SND50:
-            case IO.SND51:
+            ..
             case IO.SND52:
                 _apu.writeIO(address, data);
                 break;
@@ -432,9 +389,12 @@ public final class MMU : IGameboyDevice {
                 _apu.writeWave(address, data);
                 break;
 
-            // Stubbed serial IO.
-            case IO.SERIAL_CONTROL:
+            // Serial.
             case IO.SERIAL_DATA:
+                _serial.data = data;
+                break;
+            case IO.SERIAL_CONTROL:
+                _serial.control = data;
                 break;
 
             // Disble boot ROM.
@@ -485,5 +445,54 @@ public final class MMU : IGameboyDevice {
         }
 
         return Bus.INTERNAL;
+    }
+}
+
+// Echo RAM mirrors C000-DDFF at E000-FDFF.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+
+    gameboy.mmu.write8(0xFDFF, 0x77);
+    assert(gameboy.mmu.read8(0xDDFF) == 0x77);
+
+    gameboy.mmu.write8(0xD123, 0x55);
+    assert(gameboy.mmu.read8(0xF123) == 0x55);
+}
+
+// Unmapped IO reads as $FF and ignores writes.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    foreach (ushort address; [0xFF03, 0xFF08, 0xFF15, 0xFF27, 0xFF4C, 0xFF7F]) {
+        gameboy.mmu.write8(address, 0x00);
+        assert(gameboy.mmu.read8(address) == 0xFF);
+    }
+}
+
+// IO registers read back what was written, with unused bits reading as 1.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    immutable ubyte[3][] cases = [
+        // Address low byte, written, read.
+        [0x07, 0x00, 0xF8],
+        [0xFF, 0xE0, 0xE0],
+        [0x10, 0x00, 0x80],
+        [0x11, 0xC5, 0xFF],
+        [0x12, 0xF3, 0xF3],
+        [0x13, 0x12, 0xFF],
+        [0x14, 0x40, 0xFF],
+        [0x16, 0x80, 0xBF],
+        [0x1A, 0x00, 0x7F],
+        [0x1C, 0x00, 0x9F],
+        [0x20, 0x00, 0xFF],
+        [0x21, 0x5A, 0x5A],
+        [0x23, 0x00, 0xBF],
+        [0x24, 0x77, 0x77],
+        [0x25, 0xF3, 0xF3],
+        [0x26, 0x80, 0xF0],
+    ];
+    foreach (immutable ubyte[3] c; cases) {
+        immutable ushort address = cast(ushort)(0xFF00 | c[0]);
+        gameboy.mmu.write8(address, c[1]);
+        assert(gameboy.mmu.read8(address) == c[2]);
     }
 }

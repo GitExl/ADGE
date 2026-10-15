@@ -21,10 +21,13 @@ private enum JoypadFlagDirections : ubyte {
     RIGHT = 0x01,
 }
 
-private enum Mode : ubyte {
-    NONE      = 0x00,
-    BUTTONS   = 0x10,
-    DIRECTION = 0x20,
+private immutable ubyte STATUS_UNUSED_BITS = 0xC0;
+
+// Clearing a select bit selects its key group.
+private enum Select : ubyte {
+    DIRECTIONS = 0x10,
+    BUTTONS    = 0x20,
+    MASK       = 0x30,
 }
 
 public enum Key : ubyte {
@@ -43,7 +46,7 @@ public final class Joypad : IGameboyDevice {
     private CPU _cpu;
 
     private bool[8] _keyStates;
-    private Mode _readMode;
+    private ubyte _select;
 
     public void attach(Gameboy gameboy) {
         _gameboy = gameboy;
@@ -52,7 +55,7 @@ public final class Joypad : IGameboyDevice {
 
     public void reset() {
         _keyStates[] = false;
-        _readMode = Mode.NONE;
+        _select = 0;
     }
 
     public void cycle() {
@@ -68,11 +71,12 @@ public final class Joypad : IGameboyDevice {
 
         // Trigger joypad interrupts for non-CGB devices.
         if (_gameboy.mode != GameboyMode.COLOR) {
-            if (_readMode == Mode.DIRECTION) {
+            if (!(_select & Select.DIRECTIONS)) {
                 if (key == Key.UP || key == Key.DOWN || key == Key.LEFT || key == Key.RIGHT) {
                     _cpu.triggerInterrupt(InterruptFlag.JOYPAD);
                 }
-            } else if (_readMode == Mode.BUTTONS) {
+            }
+            if (!(_select & Select.BUTTONS)) {
                 if (key == Key.A || key == Key.B || key == Key.START || key == Key.SELECT) {
                     _cpu.triggerInterrupt(InterruptFlag.JOYPAD);
                 }
@@ -82,14 +86,15 @@ public final class Joypad : IGameboyDevice {
 
     @property
     public ubyte status() {
-        ubyte value = 0xF;
+        ubyte value = STATUS_UNUSED_BITS | _select | 0xF;
 
-        if (_readMode & Mode.DIRECTION) {
+        if (!(_select & Select.DIRECTIONS)) {
             if (_keyStates[Key.DOWN])  value &= ~cast(int)JoypadFlagDirections.DOWN;
             if (_keyStates[Key.UP])    value &= ~cast(int)JoypadFlagDirections.UP;
             if (_keyStates[Key.LEFT])  value &= ~cast(int)JoypadFlagDirections.LEFT;
             if (_keyStates[Key.RIGHT]) value &= ~cast(int)JoypadFlagDirections.RIGHT;
-        } else if (_readMode & Mode.BUTTONS) {
+        }
+        if (!(_select & Select.BUTTONS)) {
             if (_keyStates[Key.START])  value &= ~cast(int)JoypadFlagButtons.START;
             if (_keyStates[Key.SELECT]) value &= ~cast(int)JoypadFlagButtons.SELECT;
             if (_keyStates[Key.A])      value &= ~cast(int)JoypadFlagButtons.A;
@@ -101,6 +106,31 @@ public final class Joypad : IGameboyDevice {
 
     @property
     public void status(immutable ubyte value) {
-        _readMode = cast(Mode)(value & 0x30);
+        _select = value & Select.MASK;
     }
+}
+
+// The unused upper bits read as 1 and the select bits read back as written.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.joypad.status = 0x00;
+    assert(gameboy.joypad.status == 0xCF);
+    gameboy.joypad.status = 0x20;
+    assert(gameboy.joypad.status == 0xEF);
+}
+
+// Select bits are active low. Selecting both groups combines them, selecting neither reads no keys.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.joypad.setKeyState(Key.A, true);
+    gameboy.joypad.setKeyState(Key.LEFT, true);
+
+    gameboy.joypad.status = 0x20;
+    assert(gameboy.joypad.status == 0xED);
+    gameboy.joypad.status = 0x10;
+    assert(gameboy.joypad.status == 0xDE);
+    gameboy.joypad.status = 0x00;
+    assert(gameboy.joypad.status == 0xCC);
+    gameboy.joypad.status = 0x30;
+    assert(gameboy.joypad.status == 0xFF);
 }

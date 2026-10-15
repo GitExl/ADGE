@@ -57,36 +57,6 @@ public final class Channel0 : ChannelBase {
         }
     }
 
-    public ubyte readIO(immutable ushort address) {
-        switch (address) {
-            case IO.SND10:
-                ubyte value;
-                value = cast(ubyte)_frequencySweep.shift;
-                value |= _frequencySweep.shift ? 0x08 : 0;
-                value |= _frequencySweep.shift << 4;
-                return value;
-
-            case IO.SND11:
-                return cast(ubyte)(64 - (_squareWave.duty << 6));
-
-            case IO.SND12:
-                ubyte value;
-                value = _volumeEnvelope.length;
-                value |= _volumeEnvelope.negative ? 0 : 0x08;
-                value |= _volumeEnvelope.initial << 4;
-                return value;
-
-            case IO.SND13:
-                return 0x00;
-
-            case IO.SND14:
-                return _duration.stop ? 0x40 : 0;
-
-            default:
-                return 0xFF;
-        }
-    }
-
     public void writeIO(immutable ushort address, immutable ubyte data) {
         switch (address) {
             case IO.SND10:

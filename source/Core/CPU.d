@@ -1,5 +1,6 @@
 module Core.CPU;
 
+import core.bitop;
 import std.stdio;
 import std.string;
 
@@ -9,9 +10,24 @@ import Core.IGameboyDevice;
 import Core.Gameboy;
 
 
-// OAM DMA copies one byte per M-cycle, after one M-cycle of setup.
-private immutable uint DMA_CYCLES_TRANSFER = 160 * 4;
-private immutable uint DMA_CYCLES_SETUP = 4;
+// OAM DMA copies one byte per M-cycle. The first byte is copied two M-cycles after the register write.
+private immutable uint DMA_LENGTH = 160;
+private immutable uint DMA_START_DELAY = 2;
+
+// OAM DMA sources from E000 up read WRAM at 2000 lower, like echo RAM. FE00-FFFF included.
+private immutable ubyte DMA_ECHO_PAGE = 0xE0;
+private immutable ubyte DMA_ECHO_OFFSET = 0x20;
+
+// Interrupt handlers are spaced evenly, in priority order of their InterruptFlag bits.
+private immutable ushort INTERRUPT_VECTORS = 0x40;
+private immutable ushort INTERRUPT_VECTOR_SIZE = 8;
+
+private immutable ubyte IF_UNUSED_BITS = 0xE0;
+
+// EI takes effect after the instruction following it.
+private immutable uint EI_DELAY = 2;
+
+public alias void delegate() BreakpointCallback;
 
 // ALU flags set by many instructions.
 public enum ALUFlag : ubyte {
@@ -85,7 +101,10 @@ public final class CPU : IGameboyDevice {
     private bool _exitStop = false;
 
     private ubyte _dmaAddress;
-    private uint _dmaCycles;
+    private uint _dmaStartDelay;
+    private ushort _dmaPendingSrc;
+    private uint _dmaRemaining;
+    private bool _dmaTransferring;
     private ushort _dmaCurrentSrc;
     private ushort _dmaCurrentDest;
 
@@ -97,6 +116,8 @@ public final class CPU : IGameboyDevice {
     private InterruptFlag _interruptFlags;
     private InterruptFlag _interruptsEnabled;
     private InterruptFlag _interruptQueue;
+
+    private BreakpointCallback _breakpointCallback;
 
     public void attach(Gameboy gameboy) {
         _gameboy = gameboy;
@@ -111,7 +132,10 @@ public final class CPU : IGameboyDevice {
         _exitStop = false;
 
         _dmaAddress = 0;
-        _dmaCycles = 0;
+        _dmaStartDelay = 0;
+        _dmaPendingSrc = 0;
+        _dmaRemaining = 0;
+        _dmaTransferring = false;
         _dmaCurrentSrc = 0;
         _dmaCurrentDest = 0;
 
@@ -152,39 +176,48 @@ public final class CPU : IGameboyDevice {
         // HALT state, clock cycles continue but no opcodes are decoded.
         } else if (_state == State.HALTED) {
 
+            // Like an opcode fetch, interrupts are sampled at the end of each HALT cycle.
+            opIO();
+            if (!(_interruptsEnabled & _interruptFlags)) {
+                return;
+            }
+
             // HALT is stopped by any interrupt. If the interrupt master flag is enabled,
-            // interrupts are serviced normally. If it is not, execution is continued from
-            // the next instruction without servicing interrupts this cycle.
-            if (!_interruptsMasterEnable && (_interruptsEnabled & _interruptFlags)) {
-                _state = State.NORMAL;
-                if (_gameboy.mode == GameboyMode.COLOR) {
-                    opIO();
-                } else {
-                    _haltBug = true;
-                }
-            } else {
+            // interrupts are serviced normally. If it is not, execution continues with the
+            // opcode fetched in this cycle.
+            _state = State.NORMAL;
+            if (_interruptsMasterEnable) {
                 testInterrupts();
                 handleInterrupts();
+                return;
+            }
+
+            if (_gameboy.mode == GameboyMode.COLOR) {
                 opIO();
             }
+            _dbg.cycle();
+            execute(_mmu.read8(_registers.PC++));
 
         // Regular fetch & execute.
         } else {
 
-            // Handle previously queued interrupts, then check for new ones.
-            if (_interruptsMasterEnable) {
-                testInterrupts();
-            }
-            handleInterrupts();
-
             _dbg.cycle();
             immutable ubyte opcode = opRead8(_registers.PC++);
 
-            // HALT bug in GMB mode: PC is frozen for one increment after exiting HALT when
-            // the interrupt master flag is disabled.
+            // HALT bug in GMB mode: PC is frozen for one increment after a HALT that did not wait.
             if (_haltBug) {
                 _registers.PC--;
                 _haltBug = false;
+            }
+
+            // Interrupts are sampled at the end of the opcode fetch. Dispatching discards the fetched opcode.
+            if (_interruptsMasterEnable) {
+                testInterrupts();
+            }
+            if (_interruptQueue) {
+                _registers.PC--;
+                handleInterrupts();
+                return;
             }
 
             execute(opcode);
@@ -209,40 +242,42 @@ public final class CPU : IGameboyDevice {
 
     // Actually handle any queued interrupts.
     private void handleInterrupts() {
-        if (_interruptQueue & InterruptFlag.VBLANK) {
-            executeInterrupt(InterruptFlag.VBLANK, 0x40);
-        } else if (_interruptQueue & InterruptFlag.LCD_STATUS) {
-            executeInterrupt(InterruptFlag.LCD_STATUS, 0x48);
-        } else if (_interruptQueue & InterruptFlag.TIMER) {
-            executeInterrupt(InterruptFlag.TIMER, 0x50);
-        } else if (_interruptQueue & InterruptFlag.SERIAL) {
-            executeInterrupt(InterruptFlag.SERIAL, 0x58);
-        } else if (_interruptQueue & InterruptFlag.JOYPAD) {
-            executeInterrupt(InterruptFlag.JOYPAD, 0x60);
+        if (!_interruptQueue) {
+            return;
         }
+
+        _interruptQueue = InterruptFlag.NONE;
+        executeInterrupt();
     }
 
-    // Executes an interrupt.
-    private void executeInterrupt(immutable InterruptFlag flag, immutable ushort address) {
+    // Executes the highest priority pending interrupt.
+    private void executeInterrupt() {
 
         // Interrupts exit HALT state (without the DMG HALT bug ocurring).
         if (_state == State.HALTED) {
             _state = State.NORMAL;
         }
 
-        // Disable interrupts.
-        _interruptFlags &= ~cast(int)flag;
-        _interruptQueue &= ~cast(int)flag;
         _interruptsMasterEnable = false;
 
         opIO();
-        opIO();
 
-        // Push PC to stack, resume from interrupt address.
+        // The interrupt is chosen after the upper PC byte push, which can overwrite IE.
+        // If that leaves no interrupt pending, execution continues at 0000.
         opWrite8(--_registers.SP, cast(ubyte)(_registers.PC >> 8));
+        immutable ubyte pending = _interruptsEnabled & _interruptFlags;
         opWrite8(--_registers.SP, cast(ubyte)(_registers.PC >> 0));
 
-        _registers.PC = address;
+        if (!pending) {
+            _registers.PC = 0x0000;
+            opIO();
+            return;
+        }
+
+        // The lowest set bit has the highest priority.
+        immutable int index = bsf(pending);
+        _interruptFlags &= ~(1 << index);
+        _registers.PC = cast(ushort)(INTERRUPT_VECTORS + index * INTERRUPT_VECTOR_SIZE);
         opIO();
     }
 
@@ -259,13 +294,21 @@ public final class CPU : IGameboyDevice {
     // Updates subsystems for a single CPU cycle.
     private void opIO() {
 
-        // DMA memory transfer.
-        if (_dmaCycles) {            
-            if (_dmaCycles <= DMA_CYCLES_TRANSFER) {
-                _gameboy.lcd.writeOAMDirect(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
+        // A pending DMA replaces a running one only once it starts.
+        if (_dmaStartDelay) {
+            _dmaStartDelay--;
+            if (!_dmaStartDelay) {
+                _dmaCurrentSrc = _dmaPendingSrc;
+                _dmaCurrentDest = 0xFE00;
+                _dmaRemaining = DMA_LENGTH;
             }
+        }
 
-            _dmaCycles -= 4;
+        // DMA memory transfer.
+        _dmaTransferring = _dmaRemaining > 0;
+        if (_dmaTransferring) {
+            _gameboy.lcd.writeOAMDirect(_dmaCurrentDest++, _mmu.read8(_dmaCurrentSrc++));
+            _dmaRemaining--;
         }
 
         _gameboy.cycle();
@@ -275,7 +318,7 @@ public final class CPU : IGameboyDevice {
     private ubyte opRead8(immutable ushort address) {
         opIO();
         if (isAddressInDMAUse(address)) {
-            return 0;
+            return address >= 0xFE00 ? 0xFF : 0;
         }        
         return _mmu.read8(address);
     }
@@ -332,7 +375,11 @@ public final class CPU : IGameboyDevice {
             case 0x7F: _registers.A = _registers.A; break;
 
             // LD B, n
-            case 0x40: _registers.B = _registers.B; break;
+            case 0x40:
+                if (_breakpointCallback) {
+                    _breakpointCallback();
+                }
+                break;
             case 0x41: _registers.B = _registers.C; break;
             case 0x42: _registers.B = _registers.D; break;
             case 0x43: _registers.B = _registers.E; break;
@@ -628,12 +675,12 @@ public final class CPU : IGameboyDevice {
             case 0x37: opSCF(); break;
 
             // HALT, STOP
-            case 0x76: _state = State.HALTED; break;
+            case 0x76: opHALT(); break;
             case 0x10: _state = State.STOPPED; break;
 
             // DI, EI, RETI
-            case 0xF3: _interruptsMasterEnable = false; break;
-            case 0xFB: _interruptsEnableDelay = 2; break;
+            case 0xF3: opDI(); break;
+            case 0xFB: opEI(); break;
             case 0xD9: opRETI(); break;
 
             // Extension opcode.
@@ -1007,6 +1054,33 @@ public final class CPU : IGameboyDevice {
         }
     }
 
+    // Waits for an interrupt. With one already pending and IME off, HALT does not wait, and
+    // on GMB the HALT bug freezes PC for one increment.
+    private void opHALT() {
+        if (_interruptsMasterEnable || !(_interruptsEnabled & _interruptFlags)) {
+            _state = State.HALTED;
+            return;
+        }
+
+        if (_gameboy.mode != GameboyMode.COLOR) {
+            _haltBug = true;
+        }
+    }
+
+    // Disables interrupts, also cancelling a pending EI.
+    private void opDI() {
+        _interruptsMasterEnable = false;
+        _interruptsEnableDelay = 0;
+    }
+
+    // Enables interrupts after the next instruction. A repeated EI does not postpone that.
+    private void opEI() {
+        if (_interruptsEnableDelay) {
+            return;
+        }
+        _interruptsEnableDelay = EI_DELAY;
+    }
+
     // Enables interrupts on next cycle and executes RET.
     private void opRETI() {
         opRET();
@@ -1181,9 +1255,9 @@ public final class CPU : IGameboyDevice {
 
     // Pushes a value to the current stack pointer, decrease stack pointer.
     private void opPUSH(immutable ushort value) {
+        opIO();
         opWrite8(--_registers.SP, cast(ubyte)(value >> 8));
         opWrite8(--_registers.SP, cast(ubyte)(value >> 0));
-        opIO();
     }
 
     // Pops a value from the current stack pointer, increase stack pointer.
@@ -1195,9 +1269,9 @@ public final class CPU : IGameboyDevice {
 
     // Loads SP+n into HL.
     private void opHLSP() {
+        immutable byte value = cast(byte)opRead8(_registers.PC++);
         opIO();
 
-        immutable byte value = cast(byte)opRead8(_registers.PC++);
         _registers.HL = cast(ushort)(_registers.SP + value);
 
         _registers.F = 0;
@@ -1211,10 +1285,10 @@ public final class CPU : IGameboyDevice {
 
     // Add value to SP.
     private void opSPADD() {
+        immutable byte value = cast(byte)opRead8(_registers.PC++);
         opIO();
         opIO();
 
-        immutable byte value = cast(byte)opRead8(_registers.PC++);
         immutable int result = cast(ushort)(_registers.SP + value);
 
         _registers.F = 0;
@@ -1523,8 +1597,13 @@ public final class CPU : IGameboyDevice {
 
     pragma(inline, true)
     private bool isAddressInDMAUse(immutable ushort address) {
-        if (!_dmaCycles|| address >= 0xFE00) {
+        if (!_dmaTransferring || address >= 0xFF00) {
             return false;
+        }
+
+        // OAM is in use by the DMA itself.
+        if (address >= 0xFE00) {
+            return true;
         }
 
         return _mmu.busForAddress(address) == _mmu.busForAddress(_dmaCurrentSrc);
@@ -1537,7 +1616,7 @@ public final class CPU : IGameboyDevice {
 
     @property
     public ubyte interruptFlags() {
-        return _interruptFlags;
+        return _interruptFlags | IF_UNUSED_BITS;
     }
 
     @property
@@ -1552,12 +1631,17 @@ public final class CPU : IGameboyDevice {
 
     @property
     public void interruptsEnabled(immutable ubyte flags) {
-        _interruptsEnabled = cast(InterruptFlag)(flags & 0x1F);
+        _interruptsEnabled = cast(InterruptFlag)flags;
     }
 
     @property
     public bool interruptsMasterEnable() {
         return _interruptsMasterEnable;
+    }
+
+    @property
+    public void breakpointCallback(BreakpointCallback callback) {
+        _breakpointCallback = callback;
     }
 
     @property
@@ -1567,28 +1651,15 @@ public final class CPU : IGameboyDevice {
 
     @property
     public void dmaAddress(immutable ubyte value) {
-        
-        if (value < 0xF2) {
-            _dmaCycles = DMA_CYCLES_TRANSFER + DMA_CYCLES_SETUP;
-        }
+        immutable ubyte page = value >= DMA_ECHO_PAGE ? cast(ubyte)(value - DMA_ECHO_OFFSET) : value;
+        _dmaStartDelay = DMA_START_DELAY;
+        _dmaPendingSrc = page << 8;
 
         _dmaAddress = value;
-        _dmaCurrentSrc = value << 8;
-        _dmaCurrentDest = 0xFE00;
-
-        stdout.flush();
     }
 
     @property
     public ubyte dmaAddress() {
-
-        // While DMA is active, this register returns the last byte written.
-        if (_dmaCycles && _dmaCycles < DMA_CYCLES_TRANSFER) {
-            stdout.flush();
-            return _mmu.read8(_dmaCurrentSrc);
-        }
-
-        stdout.flush();
         return _dmaAddress;
     }
 }
@@ -1625,4 +1696,244 @@ unittest {
 
     assert(gameboy.lcd.readOAMDirect(0xFE4F) == 0x50);
     assert(gameboy.lcd.readOAMDirect(0xFE50) == 0);
+}
+
+// OAM DMA sources from E000 up read WRAM, including FE00-FFFF.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    foreach (ushort i; 0 .. 0xA0) {
+        gameboy.mmu.write8(cast(ushort)(0xDE00 + i), cast(ubyte)(i + 1));
+    }
+
+    gameboy.cpu.dmaAddress = 0xFE;
+    foreach (i; 0 .. 161) {
+        gameboy.cpu.opIO();
+    }
+
+    foreach (ushort i; 0 .. 0xA0) {
+        assert(gameboy.lcd.readOAMDirect(cast(ushort)(0xFE00 + i)) == i + 1);
+    }
+}
+
+// LD B, B is the debug breakpoint used by test ROMs.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    bool hit;
+    gameboy.cpu.breakpointCallback = delegate void() {
+        hit = true;
+    };
+    gameboy.mmu.write8(0xC000, 0x40);
+    gameboy.cpu.registers.PC = 0xC000;
+
+    gameboy.cpu.cycle();
+
+    assert(hit);
+}
+
+// OAM is readable during the DMA setup M-cycle, blocked while bytes transfer, readable after.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.lcd.writeOAMDirect(0xFE9F, 0x77);
+    gameboy.mmu.write8(0xC09F, 0x99);
+
+    gameboy.cpu.dmaAddress = 0xC0;
+    assert(gameboy.cpu.opRead8(0xFE9F) == 0x77);
+    foreach (i; 0 .. 159) {
+        gameboy.cpu.opIO();
+    }
+    assert(gameboy.cpu.opRead8(0xFE9F) == 0xFF);
+    assert(gameboy.cpu.opRead8(0xFE9F) == 0x99);
+}
+
+// The DMA register reads back the last written value, also during a transfer.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+
+    gameboy.cpu.dmaAddress = 0xC0;
+    foreach (i; 0 .. 10) {
+        gameboy.cpu.opIO();
+    }
+
+    assert(gameboy.cpu.dmaAddress == 0xC0);
+}
+
+// Restarting a DMA keeps the running transfer going until the new one starts.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.mmu.write8(0xC031, 0x55);
+
+    gameboy.cpu.dmaAddress = 0xC0;
+    foreach (i; 0 .. 50) {
+        gameboy.cpu.opIO();
+    }
+    gameboy.cpu.dmaAddress = 0xC1;
+
+    assert(gameboy.cpu.opRead8(0xFE00) == 0xFF);
+    assert(gameboy.lcd.readOAMDirect(0xFE31) == 0x55);
+}
+
+// An interrupt requested during an opcode fetch is dispatched instead of executing that opcode.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.mmu.write8(0xC000, 0xFB);
+    gameboy.mmu.write8(0xFFFF, InterruptFlag.TIMER);
+    gameboy.cpu.registers.PC = 0xC000;
+    gameboy.cpu.registers.SP = 0xD000;
+
+    // TIMA overflows in the fourth M-cycle and requests the interrupt in the fifth, the fetch at C004.
+    gameboy.timer.divider = 0;
+    gameboy.timer.counter = 0xFF;
+    gameboy.timer.control = 0x05;
+    foreach (i; 0 .. 5) {
+        gameboy.cpu.cycle();
+    }
+
+    assert(gameboy.cpu.registers.PC == 0x0050);
+    assert(gameboy.mmu.read8(0xCFFE) == 0x04);
+}
+
+// The unused upper IF bits read as 1.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.mmu.write8(0xFF0F, InterruptFlag.SERIAL);
+    assert(gameboy.mmu.read8(0xFF0F) == 0xE8);
+}
+
+// Requests a serial interrupt and runs the program at C000 for a number of instructions.
+private void runWithSerialIntr(Gameboy gameboy, immutable ubyte[] program, immutable uint instructions) {
+    foreach (size_t i, ubyte opcode; program) {
+        gameboy.mmu.write8(cast(ushort)(0xC000 + i), opcode);
+    }
+    gameboy.mmu.write8(0xFF0F, InterruptFlag.SERIAL);
+    gameboy.mmu.write8(0xFFFF, InterruptFlag.SERIAL);
+    gameboy.cpu.registers.PC = 0xC000;
+    gameboy.cpu.registers.SP = 0xD000;
+
+    foreach (i; 0 .. instructions) {
+        gameboy.cpu.cycle();
+    }
+}
+
+// A repeated EI does not delay enabling interrupts further.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithSerialIntr(gameboy, [0xFB, 0xFB, 0x00], 3);
+    assert(gameboy.cpu.registers.PC == 0x0058);
+    assert(gameboy.mmu.read8(0xCFFE) == 0x02);
+}
+
+// DI directly after EI cancels the pending enable.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithSerialIntr(gameboy, [0xFB, 0xF3, 0x00, 0x00], 4);
+    assert(gameboy.cpu.registers.PC == 0xC004);
+}
+
+// Pushing the PC upper byte onto IE cancels the dispatch, jumping to 0000 and leaving IF set.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithSerialIntr(gameboy, [0xFB, 0x00], 0);
+    gameboy.cpu.registers.SP = 0x0000;
+    foreach (i; 0 .. 3) {
+        gameboy.cpu.cycle();
+    }
+    assert(gameboy.cpu.registers.PC == 0x0000);
+    assert(gameboy.cpu.interruptFlags & InterruptFlag.SERIAL);
+}
+
+// Pushing the PC upper byte onto IE can redirect the dispatch to another pending interrupt.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.cpu.interruptFlags = InterruptFlag.VBLANK | InterruptFlag.LCD_STATUS;
+    gameboy.cpu.interruptsEnabled = InterruptFlag.VBLANK | InterruptFlag.LCD_STATUS;
+    gameboy.cpu._interruptsMasterEnable = true;
+    gameboy.cpu.registers.PC = 0x0234;
+    gameboy.cpu.registers.SP = 0x0000;
+
+    gameboy.cpu.testInterrupts();
+    gameboy.cpu.handleInterrupts();
+
+    assert(gameboy.cpu.registers.PC == 0x0048);
+    assert((gameboy.cpu.interruptFlags & 0x1F) == InterruptFlag.VBLANK);
+}
+
+// Runs a HALT at C000 while TIMA overflows, requesting an interrupt in the fifth M-cycle.
+private void runHaltWithTimerIntr(Gameboy gameboy, immutable uint instructions) {
+    gameboy.mmu.write8(0xC000, 0x76);
+    gameboy.mmu.write8(0xC001, 0x04);
+    gameboy.mmu.write8(0xFFFF, InterruptFlag.TIMER);
+    gameboy.cpu.registers.PC = 0xC000;
+    gameboy.cpu.registers.SP = 0xD000;
+    gameboy.timer.divider = 0;
+    gameboy.timer.counter = 0xFF;
+    gameboy.timer.control = 0x05;
+
+    foreach (i; 0 .. instructions) {
+        gameboy.cpu.cycle();
+    }
+}
+
+// With IME set, HALT dispatches an interrupt in the same M-cycle it is requested.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.cpu._interruptsMasterEnable = true;
+    runHaltWithTimerIntr(gameboy, 5);
+    assert(gameboy.cpu.registers.PC == 0x0050);
+    assert(gameboy.mmu.read8(0xCFFE) == 0x01);
+}
+
+// With IME off, HALT continues with the opcode fetched in the M-cycle the interrupt is requested.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runHaltWithTimerIntr(gameboy, 5);
+    assert(gameboy.cpu.registers.PC == 0xC002);
+    assert(gameboy.cpu.registers.B == 1);
+}
+
+// HALT with IME off and an interrupt pending does not wait, and the next byte is read twice.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithSerialIntr(gameboy, [0x76, 0x04], 3);
+    assert(gameboy.cpu.registers.PC == 0xC002);
+    assert(gameboy.cpu.registers.B == 2);
+}
+
+// Runs an instruction at FDFF whose operand at FE00 is only readable once an OAM DMA ends,
+// so the operand reads as $FF only if it is read in the instruction's second M-cycle.
+private void runWithDMAEndingAtOperand(Gameboy gameboy, immutable ubyte opcode) {
+    gameboy.mmu.write8(0xFDFF, opcode);
+    gameboy.lcd.writeOAMDirect(0xFE00, 0x01);
+    gameboy.cpu.registers.PC = 0xFDFF;
+    gameboy.cpu.registers.SP = 0xD000;
+
+    gameboy.cpu.dmaAddress = 0x80;
+    foreach (i; 0 .. DMA_LENGTH - 1) {
+        gameboy.cpu.opIO();
+    }
+    gameboy.cpu.cycle();
+}
+
+// ADD SP, e reads e in its second M-cycle.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithDMAEndingAtOperand(gameboy, 0xE8);
+    assert(gameboy.cpu.registers.SP == 0xCFFF);
+}
+
+// LD HL, SP+e reads e in its second M-cycle.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    runWithDMAEndingAtOperand(gameboy, 0xF8);
+    assert(gameboy.cpu.registers.HL == 0xCFFF);
+}
+
+// PUSH writes in its last two M-cycles. Pushing onto DIV resets the timer counter in the last one.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.mmu.write8(0xC000, 0xC5);
+    gameboy.cpu.registers.PC = 0xC000;
+    gameboy.cpu.registers.SP = 0xFF06;
+
+    gameboy.cpu.cycle();
+    assert(gameboy.timer.systemCounter == 0);
 }

@@ -6,12 +6,12 @@ import Core.MBC.IMBC;
 public final class MBC3 : IMBC {
     private ubyte _romBank;
     private ubyte _ramBank;
-    private bool _ramAndRTCWriteEnabled;
+    private bool _ramAndRTCEnabled;
 
     public void reset() {
         _romBank = 1;
         _ramBank = 0;
-        _ramAndRTCWriteEnabled = false;
+        _ramAndRTCEnabled = false;
     }
 
     public void write(immutable ushort address, immutable ubyte value) {
@@ -20,7 +20,7 @@ public final class MBC3 : IMBC {
             // RAM enable.
             case 0x0000:
             case 0x1000:
-                _ramAndRTCWriteEnabled = (value == 0x0A);
+                _ramAndRTCEnabled = (value == 0x0A);
                 break;
 
             // ROM bank select lower bits.
@@ -54,6 +54,11 @@ public final class MBC3 : IMBC {
     }
 
     @property
+    public int lowRomBank() {
+        return 0;
+    }
+
+    @property
     public int romBank() {
         return _romBank;
     }
@@ -64,8 +69,8 @@ public final class MBC3 : IMBC {
     }
 
     @property
-    public bool ramWriteEnabled() {
-        return _ramAndRTCWriteEnabled;
+    public bool ramEnabled() {
+        return _ramAndRTCEnabled;
     }
 
     @property

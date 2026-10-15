@@ -10,7 +10,7 @@
     "border_vertical": 2,
     "scale": 5,
     "vsync": false,
-    "blur_frames": 1,
+    "blur_frames": 4,
     "filter": "nearest"
   },
   "sound": {

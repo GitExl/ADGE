@@ -17,6 +17,16 @@ import Core.Audio.Channel3;
 import Interface.IAudioOut;
 
 
+// Sound registers read back as written, with unused and write-only bits reading as 1.
+// NR52 instead reads the power and channel status.
+private immutable ubyte[IO.SND52 - IO.SND10 + 1] READ_MASKS = [
+    0x80, 0x3F, 0x00, 0xFF, 0xBF,
+    0xFF, 0x3F, 0x00, 0xFF, 0xBF,
+    0x7F, 0xFF, 0x9F, 0xFF, 0xBF,
+    0xFF, 0xFF, 0x00, 0x00, 0xBF,
+    0x00, 0x00, 0x70,
+];
+
 public struct GBSample {
     double l = 0.0;
     double r = 0.0;
@@ -26,6 +36,7 @@ public final class APU : IGameboyDevice {
     private Gameboy _gameboy;
 
     private IChannel[4] _channels;
+    private ubyte[READ_MASKS.length] _registers;
 
     private bool _enabled;
 
@@ -70,6 +81,8 @@ public final class APU : IGameboyDevice {
 
         _outLVolume = 0;
         _outRVolume = 0;
+
+        _registers[] = 0;
 
         _systemSampleSum.l = 0.0;
         _systemSampleSum.r = 0.0;
@@ -150,46 +163,49 @@ public final class APU : IGameboyDevice {
     }
 
     public ubyte readIO(immutable ushort address) {
-        switch (address) {
-            case IO.SND50:
-                ubyte value;
-                value |= _vinToOutL ? 0x04 : 0;
-                value |= _vinToOutR ? 0x40 : 0;
-                value |= _outLVolume;
-                value |= _outRVolume << 4;
-                return value;
-
-            case IO.SND51:
-                ubyte value;
-                value |= _channelToOutL[0] ? 0x01 : 0;
-                value |= _channelToOutL[1] ? 0x02 : 0;
-                value |= _channelToOutL[2] ? 0x04 : 0;
-                value |= _channelToOutL[3] ? 0x08 : 0;
-                value |= _channelToOutR[0] ? 0x10 : 0;
-                value |= _channelToOutR[1] ? 0x20 : 0;
-                value |= _channelToOutR[2] ? 0x40 : 0;
-                value |= _channelToOutR[3] ? 0x80 : 0;
-                return value;
-
-            case IO.SND52:
-                ubyte value;
-                value |= _enabled ? 0x80 : 0;
-                value |= _channels[0].active ? 0x01 : 0;
-                value |= _channels[1].active ? 0x02 : 0;
-                value |= _channels[2].active ? 0x03 : 0;
-                value |= _channels[3].active ? 0x04 : 0;
-                return value;
-
-                // TODO: if powered off, writes to registers are ignored, except for DMG
-                // https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware#Power_Control
-
-            default:
-                return 0xFF;
+        immutable size_t index = address - IO.SND10;
+        if (address != IO.SND52) {
+            return _registers[index] | READ_MASKS[index];
         }
+
+        ubyte value = READ_MASKS[index];
+        value |= _enabled ? 0x80 : 0;
+        foreach (int channel; 0 .. cast(int)_channels.length) {
+            value |= _channels[channel].active ? 1 << channel : 0;
+        }
+        return value;
     }
 
+    // TODO: if powered off, writes to registers are ignored, except for DMG
+    // https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware#Power_Control
     public void writeIO(immutable ushort address, immutable ubyte data) {
+        _registers[address - IO.SND10] = data;
+
         switch (address) {
+            case IO.SND10:
+            ..
+            case IO.SND14:
+                _channels[0].writeIO(address, data);
+                break;
+
+            case IO.SND21:
+            ..
+            case IO.SND24:
+                _channels[1].writeIO(address, data);
+                break;
+
+            case IO.SND30:
+            ..
+            case IO.SND34:
+                _channels[2].writeIO(address, data);
+                break;
+
+            case IO.SND41:
+            ..
+            case IO.SND44:
+                _channels[3].writeIO(address, data);
+                break;
+
             case IO.SND50:
                 _vinToOutL = cast(bool)(data & 0x04);
                 _vinToOutR = cast(bool)(data & 0x40);

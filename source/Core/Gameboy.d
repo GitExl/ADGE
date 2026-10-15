@@ -11,6 +11,7 @@ import Core.LCD;
 import Core.Joypad;
 import Core.BootROM;
 import Core.APU;
+import Core.Serial;
 
 
 public enum GameboyMode : ubyte {
@@ -40,6 +41,7 @@ public final class Gameboy {
     private APU _apu;
     private Debugger _dbg;
     private Joypad _joypad;
+    private Serial _serial;
     private BootROM _bootrom;
 
     private int _clockRate;
@@ -79,6 +81,7 @@ public final class Gameboy {
         _timer = new Timer();
         _lcd = new LCD();
         _joypad = new Joypad();
+        _serial = new Serial();
         _apu = new APU();
         _bootrom = new BootROM("boot/" ~ bootRom ~ ".bin");
         _dbg = new Debugger();
@@ -89,11 +92,10 @@ public final class Gameboy {
         _lcd.attach(this);
         _timer.attach(this);
         _joypad.attach(this);
+        _serial.attach(this);
         _apu.attach(this);
         _bootrom.attach(this);
         _dbg.attach(this);
-
-        _timer.updateClockRate(_clockRate);
 
         reset();
     }
@@ -110,6 +112,7 @@ public final class Gameboy {
 
     public void cycle() {
         _timer.cycle();
+        _serial.cycle();
         _apu.cycle();
         _lcd.cycle();
 
@@ -142,6 +145,7 @@ public final class Gameboy {
         _cart.reset();
         _timer.reset();
         _joypad.reset();
+        _serial.reset();
         _apu.reset();
         _bootrom.reset();
     }
@@ -187,6 +191,11 @@ public final class Gameboy {
     }
 
     @property
+    public Serial serial() {
+        return _serial;
+    }
+
+    @property
     public APU apu() {
         return _apu;
     }
@@ -205,4 +214,18 @@ public final class Gameboy {
     public GameboyMode mode() {
         return _mode;
     }
+}
+// Frames keep completing with the LCD off, so frontends and test runners don't stall.
+unittest {
+    Gameboy gameboy = new Gameboy("dmg", "dmg");
+    gameboy.mmu.write8(0xFF50, 0x01);
+    gameboy.lcd.control = 0x00;
+    gameboy.lcd.vblankCallback = delegate void() {};
+
+    // JR -2
+    gameboy.mmu.write8(0xC000, 0x18);
+    gameboy.mmu.write8(0xC001, 0xFE);
+    gameboy.cpu.registers.PC = 0xC000;
+
+    gameboy.executeFrame();
 }

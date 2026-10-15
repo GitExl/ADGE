@@ -76,19 +76,6 @@ public final class Channel2 : ChannelBase {
         return 0.0;
     }
 
-    public ubyte readIO(immutable ushort address) {
-        switch (address) {
-            case IO.SND30:
-                return _active ? 0x40 : 0;
-
-            case IO.SND34:
-                return _duration.stop ? 0x40 : 0;
-
-            default:
-                return 0xFF;
-        }
-    }
-
     public void writeIO(immutable ushort address, immutable ubyte data) {
         switch (address) {
             case IO.SND30:

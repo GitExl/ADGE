@@ -11,6 +11,11 @@ public final class MBCNone : IMBC {
     }
 
     @property
+    public int lowRomBank() {
+        return 0;
+    }
+
+    @property
     public int romBank() {
         return 1;
     }
@@ -21,8 +26,8 @@ public final class MBCNone : IMBC {
     }
 
     @property
-    public bool ramWriteEnabled() {
-        return false;
+    public bool ramEnabled() {
+        return true;
     }
 
     @property

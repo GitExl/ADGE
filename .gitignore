@@ -10,3 +10,6 @@ roms
 .vs
 *.sln
 *.exe
+docs/pandocs
+docs/mealybug
+docs/kevtris
